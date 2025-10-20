@@ -1,0 +1,21 @@
+### Health
+GET http://localhost:3000/
+
+### Send single
+POST http://localhost:3000/send-sms
+Content-Type: application/json
+
+{
+  "to": "945263402",
+  "text": "Teste MIMO via API",
+  "sender": "KAYELA"
+}
+
+### Send multiple
+POST http://localhost:3000/send-sms
+Content-Type: application/json
+
+{
+  "to": "945263402,943333333",
+  "text": "Mensagem em grupo"
+}
