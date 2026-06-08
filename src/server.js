@@ -1,10 +1,21 @@
 import express from "express";
 import morgan from "morgan";
 import cors from "cors";
-import { sendSms } from "./mimoClient.js";
+import { getMimoConfigStatus, sendSms } from "./mimoClient.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+function toSmsSafeText(value) {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[^\x0A\x0D\x20-\x7E]/g, "")
+    .trim();
+}
 
 // Basic middleware
 app.use(cors());
@@ -19,6 +30,33 @@ app.get("/", (_req, res) => {
     status: "ok",
   });
 });
+
+app.get("/health", (_req, res) => {
+  res.json({
+    name: "mimo-sms-rest-api",
+    status: "ok",
+    mimo: getMimoConfigStatus(),
+  });
+});
+
+function logSmsError(err) {
+  console.error("[SMS] Provider request failed", {
+    name: err.name,
+    code: err.code,
+    status: err.status || err.response?.status,
+    providerStatus: err.providerStatus,
+    message: err.message,
+  });
+}
+
+function toSmsErrorResponse(err) {
+  return {
+    ok: false,
+    error: err.code || "SMS_PROVIDER_ERROR",
+    message: err.message || "Could not send SMS.",
+    providerStatus: err.providerStatus,
+  };
+}
 
 /**
  * POST /send-sms
@@ -37,7 +75,7 @@ app.post("/send-sms", async (req, res) => {
 
     // Very light validation/sanitization
     const recipients = String(to).replace(/\s+/g, "");
-    const message = String(text).trim();
+    const message = toSmsSafeText(text);
     if (!/^\d{7,15}(,\d{7,15})*$/.test(recipients)) {
       return res.status(400).json({
         error: "ValidationError",
@@ -62,12 +100,9 @@ app.post("/send-sms", async (req, res) => {
       providerResponse: response
     });
   } catch (err) {
-    console.error(err);
-    const status = err.response?.status || 500;
-    res.status(status).json({
-      ok: false,
-      error: err.response?.data || err.message || "Unknown error"
-    });
+    logSmsError(err);
+    const status = err.status || err.response?.status || 500;
+    res.status(status).json(toSmsErrorResponse(err));
   }
 });
 
